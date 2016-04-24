@@ -1,17 +1,18 @@
-#include "IRremote2.h"
 #include <UIPEthernet.h>
+#include <MitsubishiHeatpumpIR.h>
 
 EthernetClient client;
-IRsend hvacSend;
 byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEE};
 IPAddress ip(192,168,0,80);
 EthernetServer server(1569);
+IRSenderPWM irSender(3);
+MitsubishiHeatpumpIR *heatpumpIR;
 
 String input;
 
 
 void setup() {
-  pinMode(2, OUTPUT);
+  heatpumpIR = new MitsubishiMSYHeatpumpIR();
   Ethernet.begin(mac, ip);
   server.begin();
 }
@@ -38,12 +39,12 @@ void loop() {
 
 void handleMsg() {
   if (input == "AC OFF") {
-    hvacSend.sendHvacMitsubishi(HVAC_COLD, 25, FAN_SPEED_AUTO, VANNE_AUTO_MOVE, true);
+    heatpumpIR->send(irSender, POWER_OFF, MODE_COOL, FAN_AUTO, 25, VDIR_AUTO, HDIR_AUTO);
     client.println("AC turning off.");
   }
 
   if (input == "AC ON") {
-    hvacSend.sendHvacMitsubishi(HVAC_COLD, 25, FAN_SPEED_AUTO, VANNE_AUTO_MOVE, false);
+    heatpumpIR->send(irSender, POWER_ON, MODE_COOL, FAN_AUTO, 25, VDIR_AUTO, HDIR_AUTO);
     client.println("Ac turning on.");
   }
 }
