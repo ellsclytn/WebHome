@@ -12,9 +12,7 @@ env:
 
 install:
     - pip install -U platformio
-    - platformio lib install 91
-    - wget https://github.com/ToniA/arduino-heatpumpir/archive/master.zip -O /tmp/arduino-heatpumpir.zip
-    - unzip /tmp/arduino-heatpumpir.zip -d /tmp
+    - platformio lib install 91 290
 
 script:
-    - platformio ci --lib="." --lib="/tmp/arduino-heatpumpir-master" --board=nanoatmega328
+    - platformio ci --lib="." --board=nanoatmega328
