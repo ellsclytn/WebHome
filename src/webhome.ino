@@ -1,50 +1,64 @@
-#include <UIPEthernet.h>
+#include <Arduino.h>
+#include <ArduinoJson.h>
 #include <MitsubishiHeatpumpIR.h>
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
 
-EthernetClient client;
-byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEE};
-IPAddress ip(192,168,0,80);
-EthernetServer server(1569);
-IRSenderPWM irSender(3);
+const char* ssid = "******";
+const char* password = "******";
+IRSenderBitBang irSender(3);
 MitsubishiHeatpumpIR *heatpumpIR;
-
-String input;
-
+ESP8266WebServer server(80);
+StaticJsonBuffer<56> jsonBuffer;
+JsonObject& aircon = jsonBuffer.createObject();
 
 void setup() {
+  // Some comfortable defaults
+  aircon["power"] = POWER_OFF;
+  aircon["mode"] = MODE_COOL;
+  aircon["temperature"] = 25;
+
   heatpumpIR = new MitsubishiMSYHeatpumpIR();
-  Ethernet.begin(mac, ip);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
   server.begin();
+  server.on("/", handleRequest);
 }
 
 void loop() {
-  client = server.available();
-  if (client) {
-    if (client.available() > 0) {
-      char thisChar = client.read();
-      input += thisChar;
-      handleMsg();
-
-      if (thisChar == '\n' || thisChar == '\r') {
-        input = "";
-        client.flush();
-      }
-    }
-
-    if (!client.connected()) {
-      client.stop();
-    }
-  }
+  server.handleClient();
 }
 
-void handleMsg() {
-  if (input == "AC OFF") {
-    heatpumpIR->send(irSender, POWER_OFF, MODE_COOL, FAN_AUTO, 25, VDIR_AUTO, HDIR_AUTO);
-    client.println("AC turning off.");
+void handleRequest() {
+  if (server.hasArg("power")) {
+    if (server.arg("power") == "ON") {
+      aircon["power"] = POWER_ON;
+    } else if (server.arg("power") == "OFF") {
+      aircon["power"] = POWER_OFF;
+    }
   }
 
-  if (input == "AC ON") {
-    heatpumpIR->send(irSender, POWER_ON, MODE_COOL, FAN_AUTO, 25, VDIR_AUTO, HDIR_AUTO);
-    client.println("Ac turning on.");
+  if (server.hasArg("temperature")) {
+    if (server.arg("temperature").toInt() >= 18 && server.arg("temperature").toInt() <= 28) {
+      aircon["temperature"] = byte(server.arg("temperature").toInt());
+    }
   }
+
+  if (server.hasArg("mode")) {
+    if (server.arg("mode") == "COOL") {
+      aircon["mode"] = MODE_COOL;
+    } else if (server.arg("mode") == "HEAT") {
+      aircon["mode"] = MODE_HEAT;
+    }
+  }
+
+  heatpumpIR->send(irSender, aircon["power"], aircon["mode"], FAN_AUTO, aircon["temperature"], VDIR_AUTO, HDIR_AUTO);
+  char buffer[256];
+  aircon.printTo(buffer, sizeof(buffer));
+  server.send(200, "application/json", String(buffer));
 }

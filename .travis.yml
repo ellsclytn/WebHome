@@ -12,7 +12,7 @@ env:
 
 install:
     - pip install -U platformio
-    - platformio lib install 91 290
+    - platformio lib install 64 91 290
 
 script:
-    - platformio ci --lib="." --board=nanoatmega328
+    - platformio ci --lib="." --board=esp01
