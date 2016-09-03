@@ -13,6 +13,7 @@ env:
 install:
     - pip install -U platformio
     - platformio lib install 64 91 290
+    - cp src/env.h.example src/env.h
 
 script:
     - platformio ci --lib="." --board=esp01

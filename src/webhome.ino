@@ -4,9 +4,8 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
+#include "env.h"
 
-const char* ssid = "******";
-const char* password = "******";
 IRSenderBitBang irSender(3);
 MitsubishiHeatpumpIR *heatpumpIR;
 ESP8266WebServer server(80);
@@ -20,7 +19,7 @@ void setup() {
   aircon["temperature"] = 25;
 
   heatpumpIR = new MitsubishiMSYHeatpumpIR();
-  WiFi.begin(ssid, password);
+  WiFi.begin(SSID, PASSWORD);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
