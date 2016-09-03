@@ -36,29 +36,29 @@ void loop() {
 
 void handleRequest() {
   if (server.hasArg("power")) {
-    if (server.arg("power") == "ON") {
+    if (server.arg("power").toInt() == 1) {
       aircon["power"] = POWER_ON;
-    } else if (server.arg("power") == "OFF") {
+    } else if (server.arg("power").toInt() == 0) {
       aircon["power"] = POWER_OFF;
     }
   }
 
   if (server.hasArg("temperature")) {
-    if (server.arg("temperature").toInt() >= 18 && server.arg("temperature").toInt() <= 28) {
+    if (server.arg("temperature").toInt() >= 18 && server.arg("temperature").toInt() <= 30) {
       aircon["temperature"] = byte(server.arg("temperature").toInt());
     }
   }
 
   if (server.hasArg("mode")) {
-    if (server.arg("mode") == "COOL") {
+    if (server.arg("mode").toInt() == 3) {
       aircon["mode"] = MODE_COOL;
-    } else if (server.arg("mode") == "HEAT") {
+    } else if (server.arg("mode").toInt() == 2) {
       aircon["mode"] = MODE_HEAT;
     }
   }
 
   heatpumpIR->send(irSender, aircon["power"], aircon["mode"], FAN_AUTO, aircon["temperature"], VDIR_AUTO, HDIR_AUTO);
-  char buffer[256];
+  char buffer[56];
   aircon.printTo(buffer, sizeof(buffer));
   server.send(200, "application/json", String(buffer));
 }
