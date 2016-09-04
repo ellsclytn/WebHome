@@ -56,7 +56,10 @@ void handleRequest() {
     }
   }
 
-  heatpumpIR->send(irSender, aircon["power"], aircon["mode"], FAN_AUTO, aircon["temperature"], VDIR_AUTO, HDIR_AUTO);
+  if (server.hasArg("power") || server.hasArg("temperature") || server.hasArg("mode")) {
+    heatpumpIR->send(irSender, aircon["power"], aircon["mode"], FAN_AUTO, aircon["temperature"], VDIR_AUTO, HDIR_AUTO);
+  }
+
   char buffer[56];
   aircon.printTo(buffer, sizeof(buffer));
   server.send(200, "application/json", String(buffer));
