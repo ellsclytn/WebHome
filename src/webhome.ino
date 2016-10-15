@@ -1,66 +1,122 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <MitsubishiHeatpumpIR.h>
+#include <DHT.h>
 #include <ESP8266WiFi.h>
-#include <WiFiClient.h>
-#include <ESP8266WebServer.h>
+#include <MitsubishiHeatpumpIR.h>
+#include <PubSubClient.h>
+#include <ThingSpeak.h>
 #include "env.h"
 
-IRSenderBitBang irSender(3);
+#define DHTPIN 2
+#define DHTTYPE DHT22
+
+DHT                  dht(DHTPIN, DHTTYPE);
+DynamicJsonBuffer    jsonBuffer;
+IRSenderBitBang      irSender(3);
 MitsubishiHeatpumpIR *heatpumpIR;
-ESP8266WebServer server(80);
-StaticJsonBuffer<56> jsonBuffer;
-JsonObject& aircon = jsonBuffer.createObject();
+WiFiClient           espClient;
+PubSubClient         client(espClient);
 
-void setup() {
-  // Some comfortable defaults
-  aircon["power"] = POWER_OFF;
-  aircon["mode"] = MODE_COOL;
-  aircon["temperature"] = 25;
+JsonObject& aircon  = jsonBuffer.createObject();
 
-  heatpumpIR = new MitsubishiMSYHeatpumpIR();
-  WiFi.begin(SSID, PASSWORD);
+const int tempPoll = 300 * 1000;
+long lastPoll      = 0;
+
+void setupWifi() {
+  WiFi.disconnect(true);
+  delay(500);
+
+  WiFi.begin(SSID, WIFI_PASS);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
   }
+}
 
-  server.begin();
-  server.on("/", handleRequest);
+void mqttConnect() {
+  while (!client.connected()) {
+    if (client.connect(WiFi.macAddress().c_str(), MQTT_USER, MQTT_PASS)) {
+      client.subscribe("aircon");
+    } else {
+      delay(5000);
+    }
+  }
+}
+
+void setup() {
+  // Some comfortable defaults
+  aircon["power"]       = POWER_OFF;
+  aircon["mode"]        = MODE_COOL;
+  aircon["temperature"] = 25;
+
+  heatpumpIR = new MitsubishiMSYHeatpumpIR();
+
+  setupWifi();
+  dht.begin();
+
+  ThingSpeak.begin(espClient);
+
+  client.setServer(MQTT_SERVER, MQTT_PORT);
+  client.setCallback(handleMsg);
+  mqttConnect();
+
+  readAmbient();
 }
 
 void loop() {
-  server.handleClient();
+  if (!client.connected()) {
+    mqttConnect();
+  }
+
+  client.loop();
+
+  if (millis() >= lastPoll + tempPoll) {
+    lastPoll = millis();
+    readAmbient();
+  }
+
+  delay(100);
 }
 
-void handleRequest() {
-  if (server.hasArg("power")) {
-    if (server.arg("power").toInt() == 1) {
-      aircon["power"] = POWER_ON;
-    } else if (server.arg("power").toInt() == 0) {
-      aircon["power"] = POWER_OFF;
-    }
-  }
+void readAmbient() {
+  float h  = dht.readHumidity();
+  float t  = dht.readTemperature();
+  float hi = dht.computeHeatIndex(t, h, false);
 
-  if (server.hasArg("temperature")) {
-    if (server.arg("temperature").toInt() >= 18 && server.arg("temperature").toInt() <= 30) {
-      aircon["temperature"] = byte(server.arg("temperature").toInt());
-    }
-  }
+  DynamicJsonBuffer ambientBuffer;
+  JsonObject& ambient = ambientBuffer.createObject();
 
-  if (server.hasArg("mode")) {
-    if (server.arg("mode").toInt() == 3) {
-      aircon["mode"] = MODE_COOL;
-    } else if (server.arg("mode").toInt() == 2) {
-      aircon["mode"] = MODE_HEAT;
-    }
-  }
+  ambient["humidity"]    = h;
+  ambient["temperature"] = t;
+  ambient["index"]       = hi;
 
-  if (server.hasArg("power") || server.hasArg("temperature") || server.hasArg("mode")) {
-    heatpumpIR->send(irSender, aircon["power"], aircon["mode"], FAN_AUTO, aircon["temperature"], VDIR_AUTO, HDIR_AUTO);
-  }
+  char buffer[80];
+  ambient.printTo(buffer, sizeof(buffer));
+  client.publish("ambient", buffer);
 
-  char buffer[56];
-  aircon.printTo(buffer, sizeof(buffer));
-  server.send(200, "application/json", String(buffer));
+  ThingSpeak.setField(1, hi);
+  ThingSpeak.setField(2, t);
+  ThingSpeak.setField(3, h);
+  ThingSpeak.writeFields(TS_CHANNEL_ID, TS_API_KEY);
 }
+
+void handleMsg(char* topic, byte* payload, unsigned int length) {
+  char req[80];
+  for (int i = 0; i < length; i++) {
+    req[i] = (char)payload[i];
+  }
+
+  DynamicJsonBuffer reqBuffer;
+  JsonObject& reqJson = reqBuffer.parseObject(req);
+
+  if (!reqJson.success()) {
+    return;
+  }
+
+	aircon["mode"]        = reqJson["mode"] ? reqJson["mode"] : aircon["mode"];
+	aircon["power"]       = reqJson["power"] ? reqJson["power"] : aircon["power"];
+	aircon["temperature"] = reqJson["temperature"] ? reqJson["temperature"] : aircon["temperature"];
+
+	heatpumpIR->send(irSender, aircon["power"], aircon["mode"], FAN_AUTO, aircon["temperature"], VDIR_AUTO, HDIR_AUTO);
+}
+
